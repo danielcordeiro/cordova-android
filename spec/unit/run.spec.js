@@ -18,22 +18,13 @@
 */
 
 const rewire = require('rewire');
-const builders = require('../../lib/builders/builders');
-const MockCordovaGradleConfigParser = require('./mocks/config/MockCordovaGradleConfigParser');
-const CordovaGradleConfigParser = require('../../lib/config/CordovaGradleConfigParser');
-const CordovaGradleConfigParserFactory = require('../../lib/config/CordovaGradleConfigParserFactory');
+const builders = require('../../bin/templates/cordova/lib/builders/builders');
 
 describe('run', () => {
     let run;
 
-    const PROJECT_DIR = 'platforms/android';
-
-    beforeAll(() => {
-        spyOn(CordovaGradleConfigParserFactory, 'create').and.returnValue(new MockCordovaGradleConfigParser(PROJECT_DIR));
-    });
-
     beforeEach(() => {
-        run = rewire('../../lib/run');
+        run = rewire('../../bin/templates/cordova/lib/run');
         run.__set__({
             events: jasmine.createSpyObj('eventsSpy', ['emit'])
         });
@@ -65,37 +56,20 @@ describe('run', () => {
 
             run.__set__({
                 target: targetSpyObj,
-                emulator: emulatorSpyObj,
-                AndroidManifest: class {}
-            });
-
-            const builder = builders.getBuilder('FakeRootPath');
-            spyOn(builder, 'fetchBuildResults').and.returnValue({
-                buildType: 'debug',
-                apkPaths: ['fake.apk']
+                emulator: emulatorSpyObj
             });
 
             // run needs `this` to behave like an Api instance
             run.run = run.run.bind({
-                _builder: builder,
-                locations: { manifest: 'FakeManifestPath' }
+                _builder: builders.getBuilder('FakeRootPath')
             });
         });
 
         it('should install on target after build', () => {
-            const AndroidManifest = run.__get__('AndroidManifest');
-
             return run.run().then(() => {
                 expect(targetSpyObj.install).toHaveBeenCalledWith(
                     resolvedTarget,
-                    {
-                        manifest: jasmine.any(AndroidManifest),
-                        buildResults: {
-                            buildType: 'debug',
-                            apkPaths: ['fake.apk']
-                        },
-                        cordovaGradleConfigParser: jasmine.any(CordovaGradleConfigParser)
-                    }
+                    { apkPaths: [], buildType: 'debug' }
                 );
             });
         });
@@ -103,35 +77,17 @@ describe('run', () => {
         it('should fail with the error message if --packageType=bundle setting is used', () => {
             targetSpyObj.resolve.and.resolveTo(resolvedTarget);
             return expectAsync(run.run({ argv: ['--packageType=bundle'] }))
-                .toBeRejectedWithError(/Package type "bundle" is not supported/);
+                .toBeRejectedWith(jasmine.stringMatching(/Package type "bundle" is not supported/));
         });
     });
 
-    describe('--list option', () => {
-        beforeEach(() => {
-            spyOn(run, 'listDevices').and.returnValue(Promise.resolve());
-            spyOn(run, 'listEmulators').and.returnValue(Promise.resolve());
-        });
+    describe('help', () => {
+        it('should print out usage and help', () => {
+            spyOn(console, 'log');
+            spyOn(process, 'exit');
 
-        it('should delegate to "listDevices" when the "runListDevices" method options param contains "options.device".', () => {
-            return run.runListDevices({ options: { device: true } }).then(() => {
-                expect(run.listDevices).toHaveBeenCalled();
-                expect(run.listEmulators).not.toHaveBeenCalled();
-            });
-        });
-
-        it('should delegate to "listDevices" when the "runListDevices" method options param contains "options.emulator".', () => {
-            return run.runListDevices({ options: { emulator: true } }).then(() => {
-                expect(run.listDevices).not.toHaveBeenCalled();
-                expect(run.listEmulators).toHaveBeenCalled();
-            });
-        });
-
-        it('should delegate to both "listEmulators" and "listDevices" when the "runListDevices" method does not contain "options.device" or "options.emulator".', () => {
-            return run.runListDevices({ options: {} }).then(() => {
-                expect(run.listDevices).toHaveBeenCalled();
-                expect(run.listEmulators).toHaveBeenCalled();
-            });
+            run.help();
+            expect(console.log).toHaveBeenCalledWith(jasmine.stringMatching(/^Usage:/));
         });
     });
 });

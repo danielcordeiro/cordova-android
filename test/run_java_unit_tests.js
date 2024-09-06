@@ -21,14 +21,13 @@
 
 const path = require('path');
 const execa = require('execa');
-const fs = require('fs-extra');
-const ProjectBuilder = require('../lib/builders/ProjectBuilder');
+const ProjectBuilder = require('../bin/templates/cordova/lib/builders/ProjectBuilder');
 
 class AndroidTestRunner {
     constructor (testTitle, projectDir) {
         this.testTitle = testTitle;
         this.projectDir = projectDir;
-        this.gradleWrapper = path.join(this.projectDir, 'tools/gradlew');
+        this.gradleWrapper = path.join(this.projectDir, 'gradlew');
     }
 
     _gradlew (...args) {
@@ -42,42 +41,27 @@ class AndroidTestRunner {
         );
     }
 
-    _getGradleVersion () {
-        const config = JSON.parse(
-            fs.readFileSync(path.resolve(this.projectDir, '../../framework/cdv-gradle-config-defaults.json'), {
-                encoding: 'utf-8'
-            })
-        );
-
-        return config.GRADLE_VERSION;
-    }
-
     _createProjectBuilder () {
-        return new ProjectBuilder(this.projectDir).installGradleWrapper(this._getGradleVersion());
+        return new ProjectBuilder(this.projectDir).runGradleWrapper('gradle');
     }
 
     run () {
         return Promise.resolve()
             .then(_ => console.log(`[${this.testTitle}] Preparing Gradle wrapper for Java unit tests.`))
-            .then(_ => {
-                // TODO we should probably not only copy these files, but instead create a new project from scratch
-                fs.copyFileSync(path.resolve(this.projectDir, '../../framework/cdv-gradle-config-defaults.json'), path.resolve(this.projectDir, 'cdv-gradle-config.json'));
-                fs.copySync(path.resolve(this.projectDir, '../../templates/project/tools'), path.resolve(this.projectDir, 'tools'));
-                fs.copyFileSync(
-                    path.join(__dirname, '../templates/project/assets/www/cordova.js'),
-                    path.join(this.projectDir, 'app/src/main/assets/www/cordova.js')
-                );
-            })
             .then(_ => this._createProjectBuilder())
-            .then(_ => this._gradlew(['--version']))
+            .then(_ => this._gradlew('--version'))
             .then(_ => console.log(`[${this.testTitle}] Gradle wrapper is ready. Running tests now.`))
-            .then(_ => this._gradlew(['test']))
+            .then(_ => this._gradlew('test'))
             .then(_ => console.log(`[${this.testTitle}] Java unit tests completed successfully`));
     }
 }
 
 Promise.resolve()
     .then(_ => console.log('Starting to run all android platform tests'))
+
+    // Android Test
+    .then(_ => new AndroidTestRunner('Android Project', path.resolve(__dirname, 'android')))
+    .then(test => test.run())
 
     // AndroidX Test
     .then(_ => new AndroidTestRunner('AndroidX Project', path.resolve(__dirname, 'androidx')))

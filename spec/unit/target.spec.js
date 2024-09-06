@@ -19,20 +19,12 @@
 
 const rewire = require('rewire');
 const { CordovaError } = require('cordova-common');
-const MockCordovaGradleConfigParser = require('./mocks/config/MockCordovaGradleConfigParser');
-const CordovaGradleConfigParserFactory = require('../../lib/config/CordovaGradleConfigParserFactory');
 
 describe('target', () => {
     let target;
 
-    const PROJECT_DIR = 'platforms/android';
-
-    beforeAll(() => {
-        spyOn(CordovaGradleConfigParserFactory, 'create').and.returnValue(new MockCordovaGradleConfigParser(PROJECT_DIR));
-    });
-
     beforeEach(() => {
-        target = rewire('../../lib/target');
+        target = rewire('../../bin/templates/cordova/lib/target');
     });
 
     describe('list', () => {
@@ -125,52 +117,43 @@ describe('target', () => {
 
     describe('resolveToOfflineEmulator', () => {
         const emuId = 'emulator-5554';
-        let resolveToOfflineEmulator, emulatorSpyObj, getTargetSdkFromApkSpy, buildResults;
+        let resolveToOfflineEmulator, emulatorSpyObj;
 
         beforeEach(() => {
             resolveToOfflineEmulator = target.__get__('resolveToOfflineEmulator');
 
-            buildResults = { apkPaths: ['fake.apk'] };
-
-            emulatorSpyObj = jasmine.createSpyObj('emulatorSpy', ['start', 'best_image']);
+            emulatorSpyObj = jasmine.createSpyObj('emulatorSpy', ['start']);
             emulatorSpyObj.start.and.resolveTo(emuId);
-            emulatorSpyObj.best_image.and.resolveTo();
-
-            getTargetSdkFromApkSpy = jasmine.createSpy('getTargetSdkFromApk').and.resolveTo(99);
 
             target.__set__({
                 emulator: emulatorSpyObj,
-                isEmulatorName: name => name.startsWith('emu'),
-                getTargetSdkFromApk: getTargetSdkFromApkSpy
+                isEmulatorName: name => name.startsWith('emu')
             });
         });
 
         it('should start an emulator and run on that if none is running', () => {
-            emulatorSpyObj.best_image.and.resolveTo({ name: 'best-avd' });
-
-            return resolveToOfflineEmulator({ type: 'emulator' }, buildResults).then(result => {
+            return resolveToOfflineEmulator().then(result => {
                 expect(result).toEqual({ id: emuId, type: 'emulator' });
-                expect(getTargetSdkFromApkSpy).toHaveBeenCalledWith(buildResults.apkPaths[0]);
-                expect(emulatorSpyObj.start).toHaveBeenCalledWith('best-avd');
+                expect(emulatorSpyObj.start).toHaveBeenCalled();
             });
         });
 
         it('should start named emulator and then run on it if it is specified', () => {
-            return resolveToOfflineEmulator({ id: 'emu3' }, buildResults).then(result => {
+            return resolveToOfflineEmulator({ id: 'emu3' }).then(result => {
                 expect(result).toEqual({ id: emuId, type: 'emulator' });
                 expect(emulatorSpyObj.start).toHaveBeenCalledWith('emu3');
             });
         });
 
         it('should return null if given ID is not an avd name', () => {
-            return resolveToOfflineEmulator({ id: 'dev1' }, buildResults).then(result => {
+            return resolveToOfflineEmulator({ id: 'dev1' }).then(result => {
                 expect(result).toBe(null);
                 expect(emulatorSpyObj.start).not.toHaveBeenCalled();
             });
         });
 
         it('should return null if given type is not emulator', () => {
-            return resolveToOfflineEmulator({ type: 'device' }, buildResults).then(result => {
+            return resolveToOfflineEmulator({ type: 'device' }).then(result => {
                 expect(result).toBe(null);
                 expect(emulatorSpyObj.start).not.toHaveBeenCalled();
             });
@@ -178,7 +161,7 @@ describe('target', () => {
     });
 
     describe('resolve', () => {
-        let resolveToOnlineTarget, resolveToOfflineEmulator, buildResults;
+        let resolveToOnlineTarget, resolveToOfflineEmulator;
 
         beforeEach(() => {
             resolveToOnlineTarget = jasmine.createSpy('resolveToOnlineTarget')
@@ -186,8 +169,6 @@ describe('target', () => {
 
             resolveToOfflineEmulator = jasmine.createSpy('resolveToOfflineEmulator')
                 .and.resolveTo(null);
-
-            buildResults = { apkPaths: ['fake.apk'] };
 
             target.__set__({
                 resolveToOnlineTarget,
@@ -200,7 +181,7 @@ describe('target', () => {
             const spec = { type: 'device' };
             resolveToOnlineTarget.and.resolveTo({ id: 'dev1', type: 'device' });
 
-            return target.resolve(spec, buildResults).then(result => {
+            return target.resolve(spec).then(result => {
                 expect(result.id).toBe('dev1');
                 expect(resolveToOnlineTarget).toHaveBeenCalledWith(spec);
                 expect(resolveToOfflineEmulator).not.toHaveBeenCalled();
@@ -211,10 +192,10 @@ describe('target', () => {
             const spec = { type: 'emulator' };
             resolveToOfflineEmulator.and.resolveTo({ id: 'emu1', type: 'emulator' });
 
-            return target.resolve(spec, buildResults).then(result => {
+            return target.resolve(spec).then(result => {
                 expect(result.id).toBe('emu1');
                 expect(resolveToOnlineTarget).toHaveBeenCalledWith(spec);
-                expect(resolveToOfflineEmulator).toHaveBeenCalledWith(spec, buildResults);
+                expect(resolveToOfflineEmulator).toHaveBeenCalledWith(spec);
             });
         });
 
@@ -222,7 +203,7 @@ describe('target', () => {
             const spec = { type: 'device' };
             resolveToOnlineTarget.and.resolveTo({ id: 'dev1', type: 'device' });
 
-            return target.resolve(spec, buildResults).then(result => {
+            return target.resolve(spec).then(result => {
                 expect(result.arch).toBe('dev1-arch');
             });
         });
@@ -234,23 +215,24 @@ describe('target', () => {
     });
 
     describe('install', () => {
+        let AndroidManifestSpy;
+        let AndroidManifestFns;
+        let AndroidManifestGetActivitySpy;
         let AdbSpy;
         let buildSpy;
-        let installTarget, manifest, cordovaGradleConfigParser, appSpec;
+        let installTarget;
 
         beforeEach(() => {
             installTarget = { id: 'emulator-5556', type: 'emulator', arch: 'atari' };
 
-            manifest = jasmine.createSpyObj('manifestStub', ['getActivity']);
-            manifest.getActivity.and.returnValue(jasmine.createSpyObj('Activity', ['getName']));
-
-            cordovaGradleConfigParser = jasmine.createSpyObj('cordovaGradleConfigParserStub', ['getPackageName']);
-            cordovaGradleConfigParser.getPackageName.and.returnValue('unittestapp');
-
-            appSpec = { manifest, buildResults: {}, cordovaGradleConfigParser };
-
             buildSpy = jasmine.createSpyObj('build', ['findBestApkForArchitecture']);
             target.__set__('build', buildSpy);
+
+            AndroidManifestFns = jasmine.createSpyObj('AndroidManifestFns', ['getPackageId', 'getActivity']);
+            AndroidManifestGetActivitySpy = jasmine.createSpyObj('getActivity', ['getName']);
+            AndroidManifestFns.getActivity.and.returnValue(AndroidManifestGetActivitySpy);
+            AndroidManifestSpy = jasmine.createSpy('AndroidManifest').and.returnValue(AndroidManifestFns);
+            target.__set__('AndroidManifest', AndroidManifestSpy);
 
             AdbSpy = jasmine.createSpyObj('Adb', ['shell', 'start', 'install', 'uninstall']);
             AdbSpy.shell.and.returnValue(Promise.resolve());
@@ -264,7 +246,7 @@ describe('target', () => {
         });
 
         it('should install to the passed target', () => {
-            return target.install(installTarget, appSpec).then(() => {
+            return target.install(installTarget, {}).then(() => {
                 expect(AdbSpy.install.calls.argsFor(0)[0]).toBe(installTarget.id);
             });
         });
@@ -279,7 +261,7 @@ describe('target', () => {
             const apkPath = 'my/apk/path/app.apk';
             buildSpy.findBestApkForArchitecture.and.returnValue(apkPath);
 
-            return target.install(installTarget, { manifest, buildResults, cordovaGradleConfigParser: CordovaGradleConfigParserFactory.create(PROJECT_DIR) }).then(() => {
+            return target.install(installTarget, buildResults).then(() => {
                 expect(buildSpy.findBestApkForArchitecture).toHaveBeenCalledWith(buildResults, installTarget.arch);
 
                 expect(AdbSpy.install.calls.argsFor(0)[1]).toBe(apkPath);
@@ -292,7 +274,7 @@ describe('target', () => {
                 Promise.resolve()
             );
 
-            return target.install(installTarget, appSpec).then(() => {
+            return target.install(installTarget, {}).then(() => {
                 expect(AdbSpy.install).toHaveBeenCalledTimes(2);
                 expect(AdbSpy.uninstall).toHaveBeenCalled();
             });
@@ -302,7 +284,7 @@ describe('target', () => {
             const errorMsg = 'Failure: Failed to install';
             AdbSpy.install.and.rejectWith(new CordovaError(errorMsg));
 
-            return target.install(installTarget, appSpec).then(
+            return target.install(installTarget, {}).then(
                 () => fail('Unexpectedly resolved'),
                 err => {
                     expect(err).toEqual(jasmine.any(CordovaError));
@@ -312,7 +294,7 @@ describe('target', () => {
         });
 
         it('should unlock the screen on device', () => {
-            return target.install(installTarget, appSpec).then(() => {
+            return target.install(installTarget, {}).then(() => {
                 expect(AdbSpy.shell).toHaveBeenCalledWith(installTarget.id, 'input keyevent 82');
             });
         });
@@ -320,10 +302,10 @@ describe('target', () => {
         it('should start the newly installed app on the device', () => {
             const packageId = 'unittestapp';
             const activityName = 'TestActivity';
-            cordovaGradleConfigParser.getPackageName.and.returnValue(packageId);
-            manifest.getActivity().getName.and.returnValue(activityName);
+            AndroidManifestFns.getPackageId.and.returnValue(packageId);
+            AndroidManifestGetActivitySpy.getName.and.returnValue(activityName);
 
-            return target.install(installTarget, appSpec).then(() => {
+            return target.install(installTarget, {}).then(() => {
                 expect(AdbSpy.start).toHaveBeenCalledWith(installTarget.id, `${packageId}/.${activityName}`);
             });
         });

@@ -20,16 +20,26 @@
 const path = require('path');
 const rewire = require('rewire');
 const { CordovaError } = require('cordova-common');
-const utils = require('../../lib/utils');
+const utils = require('../../bin/templates/cordova/lib/utils');
 const glob = require('fast-glob');
 
 describe('Java', () => {
-    const Java = rewire('../../lib/env/java');
+    const Java = rewire('../../bin/templates/cordova/lib/env/java');
 
     describe('getVersion', () => {
+        let originalEnsureFunc = null;
+
         beforeEach(() => {
-            // No need to run _ensure, since we are stubbing execa
-            spyOn(Java, '_ensure').and.resolveTo();
+            /*
+                This is to avoid changing/polluting the
+                process environment variables
+                as a result of running these java tests; which could produce
+                unexpected side effects to other tests.
+             */
+            originalEnsureFunc = Java._ensure;
+            spyOn(Java, '_ensure').and.callFake(() => {
+                return originalEnsureFunc({});
+            });
         });
 
         it('runs', async () => {
@@ -37,35 +47,16 @@ describe('Java', () => {
                 all: 'javac 1.8.0_275'
             }));
 
+            console.log('BEFORE', process.env.JAVA_HOME);
             const result = await Java.getVersion();
+            console.log('AFTER', process.env.JAVA_HOME);
             expect(result.major).toBe(1);
             expect(result.minor).toBe(8);
             expect(result.patch).toBe(0);
             expect(result.version).toBe('1.8.0');
         });
 
-        it('detects JDK when additional details are printed', async () => {
-            Java.__set__('execa', () => Promise.resolve({
-                all: 'Picked up JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF8\njavac 1.8.0_275'
-            }));
-
-            const result = await Java.getVersion();
-            expect(result.major).toBe(1);
-            expect(result.minor).toBe(8);
-            expect(result.patch).toBe(0);
-            expect(result.version).toBe('1.8.0');
-        });
-
-        it('detects JDK when additional details contain numbers', async () => {
-            Java.__set__('execa', () => Promise.resolve({
-                all: 'Picked up _JAVA_OPTIONS: -Xms1024M -Xmx2048M\njavac 1.8.0_271'
-            }));
-
-            const { version } = await Java.getVersion();
-            expect(version).toBe('1.8.0');
-        });
-
-        it('produces a CordovaError on subprocess error', async () => {
+        it('produces a CordovaError on error', async () => {
             Java.__set__('execa', () => Promise.reject({
                 shortMessage: 'test error'
             }));
@@ -78,32 +69,11 @@ describe('Java', () => {
                 .toBeRejectedWithError(CordovaError, /Failed to run "javac -version"/);
             expect(emitSpy).toHaveBeenCalledWith('verbose', 'test error');
         });
-
-        it('throws an error on unexpected output', async () => {
-            Java.__set__('execa', () => Promise.reject({
-                all: '-version not supported'
-            }));
-
-            await expectAsync(Java.getVersion()).toBeRejectedWithError();
-        });
     });
 
     describe('_ensure', () => {
         beforeEach(() => {
             Java.__set__('javaIsEnsured', false);
-        });
-
-        it('CORDOVA_JAVA_HOME overrides JAVA_HOME', async () => {
-            spyOn(utils, 'forgivingWhichSync').and.returnValue('');
-
-            const env = {
-                CORDOVA_JAVA_HOME: '/tmp/jdk'
-            };
-
-            await Java._ensure(env);
-
-            expect(env.JAVA_HOME).toBe('/tmp/jdk');
-            expect(env.PATH.split(path.delimiter)).toContain(['', 'tmp', 'jdk', 'bin'].join(path.sep));
         });
 
         it('with JAVA_HOME / without javac', async () => {

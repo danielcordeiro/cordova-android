@@ -18,5 +18,9 @@
 
 ext.repos = {
     google()
-    mavenCentral()
+    jcenter()
+    maven { url 'https://plugins.gradle.org/m2/' }
+    maven {
+        url "https://repo.grails.org/grails/core"
+    }
 }

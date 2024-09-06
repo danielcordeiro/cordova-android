@@ -38,7 +38,7 @@ describe('Adb', () => {
     let execaSpy;
 
     beforeEach(() => {
-        Adb = rewire('../../lib/Adb');
+        Adb = rewire('../../bin/templates/cordova/lib/Adb');
         execaSpy = jasmine.createSpy('execa');
         Adb.__set__('execa', execaSpy);
     });

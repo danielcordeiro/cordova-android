@@ -17,25 +17,17 @@
     under the License.
 */
 
-const rewire = require('rewire');
-const utils = require('../../lib/utils');
-const create = rewire('../../lib/create');
-const check_reqs = require('../../lib/check_reqs');
-const fs = require('fs-extra');
-const path = require('path');
-const MockCordovaGradleConfigParser = require('./mocks/config/MockCordovaGradleConfigParser');
-const CordovaGradleConfigParserFactory = require('../../lib/config/CordovaGradleConfigParserFactory');
+var rewire = require('rewire');
+var utils = require('../../bin/templates/cordova/lib/utils');
+var create = rewire('../../bin/lib/create');
+var check_reqs = require('../../bin/templates/cordova/lib/check_reqs');
+var fs = require('fs-extra');
+var path = require('path');
 
 describe('create', function () {
-    const PROJECT_DIR = 'platforms/android';
-
-    beforeAll(() => {
-        spyOn(CordovaGradleConfigParserFactory, 'create').and.returnValue(new MockCordovaGradleConfigParser(PROJECT_DIR));
-    });
-
     describe('validatePackageName helper method', function () {
         describe('happy path (valid package names)', function () {
-            const valid = [
+            var valid = [
                 'org.apache.mobilespec',
                 'com.example',
                 'com.floors42.package',
@@ -90,7 +82,7 @@ describe('create', function () {
 
     describe('validateProjectName helper method', function () {
         describe('happy path (valid project names)', function () {
-            const valid = [
+            var valid = [
                 'mobilespec',
                 'package_name',
                 'PackageName',
@@ -119,14 +111,14 @@ describe('create', function () {
     });
 
     describe('main method', function () {
-        let config_mock;
-        let events_mock;
-        const Manifest_mock = function () {};
-        let revert_manifest_mock;
-        const project_path = path.join('some', 'path');
-        const app_path = path.join(project_path, 'app', 'src', 'main');
-        const default_templates = path.join(__dirname, '..', '..', 'templates', 'project');
-        const fake_android_target = 'android-1337';
+        var config_mock;
+        var events_mock;
+        var Manifest_mock = function () {};
+        var revert_manifest_mock;
+        var project_path = path.join('some', 'path');
+        var app_path = path.join(project_path, 'app', 'src', 'main');
+        var default_templates = path.join(__dirname, '..', '..', 'bin', 'templates', 'project');
+        var fake_android_target = 'android-1337';
 
         beforeEach(function () {
             Manifest_mock.prototype = jasmine.createSpyObj('AndroidManifest instance mock', ['setPackageId', 'getActivity', 'setName', 'write']);
@@ -140,6 +132,7 @@ describe('create', function () {
             spyOn(create, 'copyBuildRules');
             spyOn(create, 'writeProjectProperties');
             spyOn(create, 'prepBuildFiles');
+            spyOn(create, 'writeNameForAndroidStudio');
             revert_manifest_mock = create.__set__('AndroidManifest', Manifest_mock);
             spyOn(fs, 'existsSync').and.returnValue(false);
             spyOn(fs, 'copySync');
@@ -155,10 +148,10 @@ describe('create', function () {
         });
 
         describe('parameter values and defaults', function () {
-            it('should have a default package name of io.cordova.helloCordova', () => {
+            it('should have a default package name of my.cordova.project', () => {
                 config_mock.packageName.and.returnValue(undefined);
                 return create.create(project_path, config_mock, {}, events_mock).then(() => {
-                    expect(create.validatePackageName).toHaveBeenCalledWith('io.cordova.helloCordova');
+                    expect(create.validatePackageName).toHaveBeenCalledWith('my.cordova.project');
                 });
             });
 
@@ -169,10 +162,10 @@ describe('create', function () {
                 });
             });
 
-            it('should have a default project name of Hello Cordova', () => {
+            it('should have a default project name of CordovaExample', () => {
                 config_mock.name.and.returnValue(undefined);
                 return create.create(project_path, config_mock, {}, events_mock).then(() => {
-                    expect(create.validateProjectName).toHaveBeenCalledWith('Hello Cordova');
+                    expect(create.validateProjectName).toHaveBeenCalledWith('CordovaExample');
                 });
             });
 
@@ -183,10 +176,10 @@ describe('create', function () {
                 });
             });
 
-            it('should keep non-word characters (including unicode and spaces) in the ConfigParser-provided project name', () => {
+            it('should replace any non-word characters (including unicode and spaces) in the ConfigParser-provided project name with underscores', () => {
                 config_mock.name.and.returnValue('応応応応 hello 用用用用');
                 return create.create(project_path, config_mock, {}, events_mock).then(() => {
-                    expect(create.validateProjectName).toHaveBeenCalledWith('応応応応 hello 用用用用');
+                    expect(create.validateProjectName).toHaveBeenCalledWith('_____hello_____');
                 });
             });
 
@@ -268,7 +261,7 @@ describe('create', function () {
             it('should copy, rename and interpolate the template Activity java class with the project-specific activity name and package name', () => {
                 config_mock.packageName.and.returnValue('org.apache.cordova');
                 config_mock.android_activityName.and.returnValue('CEEDEEVEE');
-                const activity_path = path.join(app_path, 'java', 'org', 'apache', 'cordova', 'CEEDEEVEE.java');
+                var activity_path = path.join(app_path, 'java', 'org', 'apache', 'cordova', 'CEEDEEVEE.java');
                 return create.create(project_path, config_mock, {}, events_mock).then(() => {
                     expect(fs.copySync).toHaveBeenCalledWith(path.join(default_templates, 'Activity.java'), activity_path);
                     expect(utils.replaceFileContents).toHaveBeenCalledWith(activity_path, /__ACTIVITY__/, 'CEEDEEVEE');
@@ -280,13 +273,6 @@ describe('create', function () {
                 config_mock.name.and.returnValue('IncredibleApp');
                 return create.create(project_path, config_mock, {}, events_mock).then(() => {
                     expect(utils.replaceFileContents).toHaveBeenCalledWith(path.join(app_path, 'res', 'values', 'strings.xml'), /__NAME__/, 'IncredibleApp');
-                });
-            });
-
-            it('should interpolate the escaped project name into strings.xml', () => {
-                config_mock.name.and.returnValue('<Incredible&App>');
-                return create.create(project_path, config_mock, {}, events_mock).then(() => {
-                    expect(utils.replaceFileContents).toHaveBeenCalledWith(path.join(app_path, 'res', 'values', 'strings.xml'), /__NAME__/, '&lt;Incredible&amp;App&gt;');
                 });
             });
 
@@ -313,6 +299,26 @@ describe('create', function () {
                     expect(create.prepBuildFiles).toHaveBeenCalledWith(project_path);
                 });
             });
+        });
+    });
+
+    describe('writeNameForAndroidStudio', () => {
+        const project_path = path.join('some', 'path');
+        const appName = 'Test Cordova';
+
+        beforeEach(function () {
+            spyOn(fs, 'ensureDirSync');
+            spyOn(fs, 'writeFileSync');
+        });
+
+        it('should call ensureDirSync with path', () => {
+            create.writeNameForAndroidStudio(project_path, appName);
+            expect(fs.ensureDirSync).toHaveBeenCalledWith(path.join(project_path, '.idea'));
+        });
+
+        it('should call writeFileSync with content', () => {
+            create.writeNameForAndroidStudio(project_path, appName);
+            expect(fs.writeFileSync).toHaveBeenCalledWith(path.join(project_path, '.idea', '.name'), appName);
         });
     });
 });

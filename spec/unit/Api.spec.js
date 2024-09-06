@@ -17,31 +17,29 @@
     under the License.
 */
 
-const os = require('os');
-const path = require('path');
-const common = require('cordova-common');
+var os = require('os');
+var path = require('path');
+var common = require('cordova-common');
 const EventEmitter = require('events');
 
-const Api = require('../../lib/Api');
-const AndroidProject = require('../../lib/AndroidProject');
-const check_reqs = require('../../lib/check_reqs');
-const run_mod = require('../../lib/run');
+var Api = require('../../bin/templates/cordova/Api');
+var AndroidProject = require('../../bin/templates/cordova/lib/AndroidProject');
 
-const PluginInfo = common.PluginInfo;
+var PluginInfo = common.PluginInfo;
 
-const FIXTURES = path.join(__dirname, '../e2e/fixtures');
-const FAKE_PROJECT_DIR = path.join(os.tmpdir(), 'plugin-test-project');
+var FIXTURES = path.join(__dirname, '../e2e/fixtures');
+var FAKE_PROJECT_DIR = path.join(os.tmpdir(), 'plugin-test-project');
 
 describe('Api', () => {
     describe('addPlugin method', function () {
-        let api;
+        var api;
 
         beforeEach(function () {
-            const pluginManager = jasmine.createSpyObj('pluginManager', ['addPlugin']);
+            var pluginManager = jasmine.createSpyObj('pluginManager', ['addPlugin']);
             pluginManager.addPlugin.and.resolveTo();
             spyOn(common.PluginManager, 'get').and.returnValue(pluginManager);
 
-            const projectSpy = jasmine.createSpyObj('AndroidProject', ['getPackageName', 'write', 'isClean']);
+            var projectSpy = jasmine.createSpyObj('AndroidProject', ['getPackageName', 'write', 'isClean']);
             spyOn(AndroidProject, 'getProjectFile').and.returnValue(projectSpy);
 
             api = new Api('android', FAKE_PROJECT_DIR, new EventEmitter());
@@ -59,21 +57,6 @@ describe('Api', () => {
         it('Test#002 : shouldn\'t trigger gradleBuilder.prepBuildFiles for plugins without android frameworks', () => {
             return api.addPlugin(getPluginFixture('cordova-plugin-fake-ios-frameworks')).then(() => {
                 expect(api._builder.prepBuildFiles).not.toHaveBeenCalled();
-            });
-        });
-    });
-
-    describe('listTargets', () => {
-        let api;
-
-        beforeEach(() => {
-            api = new Api('android', FAKE_PROJECT_DIR, new EventEmitter());
-            spyOn(check_reqs, 'run').and.returnValue(Promise.resolve());
-        });
-        it('should call into lib/run module', () => {
-            spyOn(run_mod, 'runListDevices');
-            return api.listTargets().then(() => {
-                expect(run_mod.runListDevices).toHaveBeenCalled();
             });
         });
     });
